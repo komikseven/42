@@ -63,7 +63,7 @@ async function detectMangaType(html: string, wpPostId?: number): Promise<string>
       }
     } catch { /* lanjut */ }
 
-    // ── Strategi 5: WP category yang mengandung type ──
+    // ── Strategi 5: WP category yang mengandung type — EXACT match slug ──
     try {
       const catRes = await fetch(
         `${SITE_BASE}/wp-json/wp/v2/categories?post=${wpPostId}&per_page=20&_fields=name,slug`,
@@ -71,10 +71,13 @@ async function detectMangaType(html: string, wpPostId?: number): Promise<string>
       )
       if (catRes.ok) {
         const cats = await catRes.json() as Array<{ name: string; slug: string }>
+        // Exact match dulu — slug/name PERSIS "manhua", "manhwa", "manga"
         for (const c of cats) {
-          const s = (c.slug || c.name || "").toLowerCase()
-          if (s.includes("manhua")) return "Manhua"
-          if (s.includes("manhwa")) return "Manhwa"
+          const s = (c.slug || "").toLowerCase().trim()
+          const n = (c.name || "").toLowerCase().trim()
+          if (s === "manhua" || n === "manhua") return "Manhua"
+          if (s === "manhwa" || n === "manhwa") return "Manhwa"
+          if (s === "manga" || n === "manga") return "Manga"
         }
       }
     } catch { /* lanjut */ }
@@ -117,9 +120,11 @@ async function detectMangaType(html: string, wpPostId?: number): Promise<string>
     if (/\bManga\b/i.test(block)) return "Manga"
   }
 
-  // ── Strategi 4b: scan 3000 char PERTENGAHAN HTML (skip head/meta) ──
-  // Mulai dari char 5000 untuk melewati head, ambil 3000 char
-  const htmlMid = html.slice(5000, 8000)
+  // ── Strategi 4b: scan blok info di HTML — lebih targeted ──
+  // Cari di 2000 char setelah judul komik muncul (bukan di sidebar/footer)
+  const titleIdx = html.search(/<h1[^>]*>/i)
+  const scanStart = titleIdx > 0 ? titleIdx : 3000
+  const htmlMid = html.slice(scanStart, scanStart + 3000)
   if (/\bManhua\b/i.test(htmlMid)) return "Manhua"
   if (/\bManhwa\b/i.test(htmlMid)) return "Manhwa"
   if (/\bManga\b/i.test(htmlMid)) return "Manga"
@@ -299,7 +304,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const detail = await cached(
-      `komiku:detail:v4:${slug}`,
+      `komiku:detail:v5:${slug}`,
       TTL.seriesDetail,
       () => scrapeDetail(slug)
     )
